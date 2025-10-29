@@ -28,6 +28,7 @@ static const char *pathRadeonX4200[]        { "/System/Library/Extensions/AMDRad
 static const char *pathRadeonX4250[]        { "/System/Library/Extensions/AMDRadeonX4250.kext/Contents/MacOS/AMDRadeonX4250" };
 static const char *pathRadeonX5000[]        { "/System/Library/Extensions/AMDRadeonX5000.kext/Contents/MacOS/AMDRadeonX5000" };
 static const char *pathRadeonX6000[]        { "/System/Library/Extensions/AMDRadeonX6000.kext/Contents/MacOS/AMDRadeonX6000" };
+static const char *pathAMDRadeonServiceManager[] { "/System/Library/Extensions/AMDRadeonServiceManager.kext/Contents/MacOS/AMDRadeonServiceManager" };
 static const char *patchPolarisController[] { "/System/Library/Extensions/AMD9500Controller.kext/Contents/MacOS/AMD9500Controller" };
 
 static const char *idRadeonX3000New {"com.apple.kext.AMDRadeonX3000"};
@@ -51,6 +52,8 @@ static KernelPatcher::KextInfo kextRadeonLegacySupport
 { "com.apple.kext.AMDLegacySupport", pathLegacySupport, 1, {}, {}, KernelPatcher::KextInfo::Unloaded };
 static KernelPatcher::KextInfo kextPolarisController
 { "com.apple.kext.AMD9500Controller", patchPolarisController, 1, {}, {}, KernelPatcher::KextInfo::Unloaded };
+static KernelPatcher::KextInfo kextRadeonServiceManager
+{ "com.apple.kext.AMDRadeonServiceManager", pathAMDRadeonServiceManager, 1, {}, {}, KernelPatcher::KextInfo::Unloaded };
 static KernelPatcher::KextInfo kextRadeonX6000Framebuffer
 { "com.apple.kext.AMDRadeonX6000Framebuffer", pathRedeonX6000Framebuffer, arrsize(pathRedeonX6000Framebuffer), {}, {}, KernelPatcher::KextInfo::Unloaded };
 
@@ -125,6 +128,8 @@ void RAD::init(bool enableNavi10Bkl) {
 		lilu.onKextLoadForce(&kextRadeonLegacySupport);
 	else
 		lilu.onKextLoadForce(&kextPolarisController);
+	    // Try loading RadeonServiceManager to save loadIndex status in memory.
+     	lilu.onKextLoad(&kextRadeonServiceManager);
 
 	initHardwareKextMods();
 
@@ -302,6 +307,21 @@ IOReturn RAD::wrapAMDRadeonX6000AmdRadeonFramebufferGetAttribute(IOService *fram
 	return ret;
 }
 
+bool RAD::ifNeedOverrideConnector(KernelPatcher &patcher, size_t index, mach_vm_address_t address, size_t size) {
+	// No need to overwrite the connector when booting BaseSystem on macOS Tahoe.
+	// This step is unnecessary and will cause macOS Tahoe recovery mode to freeze when booting.
+	// Committed by laobamac
+	if (getKernelVersion() >= KernelVersion::Tahoe) {
+		if (kextRadeonServiceManager.loadIndex != index) {
+			return false;
+		}
+		else
+			return true;
+	}
+	else
+		return true;
+}
+
 bool RAD::processKext(KernelPatcher &patcher, size_t index, mach_vm_address_t address, size_t size) {
 	if (kextRadeonX6000Framebuffer.loadIndex == index) {
 		KernelPatcher::RouteRequest requests[] = {
@@ -333,7 +353,10 @@ bool RAD::processKext(KernelPatcher &patcher, size_t index, mach_vm_address_t ad
 	}
 
 	if (kextRadeonSupport.loadIndex == index) {
-		processConnectorOverrides(patcher, address, size, true);
+		// The abnormal start-up system does not cover the connector on Tahoe.
+		if (ifNeedOverrideConnector(patcher, index, address, size) != false) {
+			processConnectorOverrides(patcher, address, size, true);
+		}
 
 		if (getKernelVersion() > KernelVersion::Mojave ||
 			(getKernelVersion() == KernelVersion::Mojave && getKernelMinorVersion() >= 5)) {
