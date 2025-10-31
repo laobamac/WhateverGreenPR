@@ -306,8 +306,14 @@ bool RAD::isNormalSys() {
 	if (lilu.getRunMode() == 2) {
 		return false;
 	}
-	else
-		return true;
+
+	// OTAing will load "com.apple.recoveryosd"
+	OSDictionary *match = IOService::serviceMatching("com.apple.recoveryosd");
+	if (match) {
+		return false;
+	}
+
+	return true;
 }
 
 bool RAD::ifNeedOverrideConnector(KernelPatcher &patcher, size_t index, mach_vm_address_t address, size_t size) {
