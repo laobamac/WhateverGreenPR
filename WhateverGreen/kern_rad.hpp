@@ -524,6 +524,7 @@ private:
 	 *  If need override connector
 	 */
 	bool ifNeedOverrideConnector(KernelPatcher &patcher, size_t index, mach_vm_address_t address, size_t size);
+	bool isNormalSys();
 };
 
 #endif /* kern_rad_hpp */
